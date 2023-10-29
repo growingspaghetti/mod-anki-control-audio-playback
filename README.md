@@ -1,3 +1,13 @@
+My tiny modification:
+---------------------
+
+Having not realized that there's already an addon https://github.com/TruongQToan/Automatically-flip-cards/tree/master I added these hacks:
+
+- automatically show the answer side of a card if the current player speed is 1.2.
+- automatically flip cards after playing audio if the current player speed is 1.2.
+
+Original:
+---------
 Anki add-on that adds options to control audio playback speed in the reviewer.
 
 You can configure the shortcuts and the speed change from the add-on config under **Tools > Add-ons**.
