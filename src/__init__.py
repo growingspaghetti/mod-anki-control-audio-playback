@@ -94,3 +94,101 @@ def on_profile_did_open() -> None:
 
 
 gui_hooks.profile_did_open.append(on_profile_did_open)
+
+########################################################
+
+from PyQt5.QtCore import QThread
+import re
+import subprocess
+import time
+from anki.utils import isWin
+
+
+def on_answer_did_open(card) -> None:
+    class thread_function(QThread):
+        finished = pyqtSignal()
+        def __init__(self, var):
+            self.var = 2 if var == 0.00 else var
+            super().__init__()
+        def run(self):
+            time.sleep(self.var / get_speed())
+            self.finished.emit()
+    note = card.note()
+    note_type = note.note_type()
+    audio_fields = find_audio_fields(card)
+    duration = split_audio_fields(card, note_type, audio_fields)
+    worker = thread_function(duration)
+    def on_timeout():
+        worker.quit()
+        if mw.reviewer.card == card and get_speed() == 1.2:
+            mw.reviewer._answerCard(3)
+    worker.finished.connect(on_timeout)
+    worker.start()
+    mw.destroyed.connect(worker.deleteLater)
+    mw.destroyed.connect(worker.quit)
+
+
+def find_audio_fields(card):
+    audio_fields = []
+    fields_with_audio = {}
+    for field, value in card.note().items():
+        match = re.findall(r"\[sound:(.*?)\]", value)
+        if match:
+            audio_fields.append(field)
+            fields_with_audio[field] = match
+    return audio_fields, fields_with_audio
+
+
+def split_audio_fields(card, note_type, audio_fields):
+    def helper(q):
+        q_times = []
+        start = 0
+        while True:
+            s = q.find('{{', start)
+            if s == -1: break
+            e = q.find('}}', s)
+            if e != -1:
+                if q[s + 2:e] in audio_fields[1]:
+                    q_times.append(q[s + 2:e][:])
+                start = e + 2
+            else: break
+        return q_times
+
+    question_audio_fields = []
+    answer_audio_fields = []
+    if card is not None:
+        t = note_type['tmpls'][card.ord]
+        q = t.get("qfmt")
+        a = t.get("afmt")
+        question_audio_fields.extend(helper(q))
+        answer_audio_fields.extend(helper(a))
+    media_path = mw.col.path.rsplit('\\', 1)[0] + '\\collection.media\\' if isWin else mw.col.path.rsplit('/', 1)[0] + '/collection.media/'
+
+    mp3set = set()
+    #for audio_qfield in question_audio_fields:
+        #for mp3 in audio_fields[1].get(audio_qfield):
+            # mp3set.add(mp3)
+    for audio_afield in answer_audio_fields:
+        for mp3 in audio_fields[1].get(audio_afield):
+            mp3set.add(mp3)
+
+    total_duration = 0.0
+    for mp3 in mp3set:
+        p = subprocess.check_output([
+        "mpv", "--term-playing-msg=DURATION=${=duration}", "--no-config",
+        "--no-cache", "--quiet", "--vo=null", "--ao=null", "--frames=1",
+        media_path+mp3], shell=False)
+        for line in p.splitlines():
+            if line.startswith(b"DURATION="):
+                duration = float(line[len("DURATION="):])
+                total_duration += duration
+    return total_duration
+
+
+def on_question_did_open(card) -> None:
+    if mw.reviewer.lastCard() != card and get_speed() == 1.2:
+        mw.reviewer._showAnswer()
+
+
+gui_hooks.reviewer_did_show_answer.append(on_answer_did_open)
+gui_hooks.reviewer_did_show_question.append(on_question_did_open)
